@@ -1,0 +1,531 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MEMBER
+  ADMIN
+}
+
+enum PrayerType {
+  PRAYER
+  SUPPORT
+  EMERGENCY
+}
+
+enum PrayerStatus {
+  OPEN
+  CLAIMED
+}
+
+enum CommissionStatus {
+  OPEN
+  ASSIGNED
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+enum ProjectionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  FAILED
+}
+
+enum ListingStatus {
+  OPEN
+  CLOSED
+  WITHDRAWN
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum GoodKind {
+  POTION
+  INGREDIENT
+  ARTIFACT
+  OTHER
+}
+
+enum GatheringStatus {
+  UPCOMING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum RsvpStatus {
+  ATTENDING
+  TENTATIVE
+  DECLINED
+}
+
+enum IntelVerification {
+  UNVERIFIED
+  VERIFIED
+  DISPUTED
+}
+
+enum MysteryDifficulty {
+  NOVICE
+  ADEPT
+  MASTER
+}
+
+enum MysteryStatus {
+  ACTIVE
+  SOLVED
+  ARCHIVED
+}
+
+enum VoteStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum ResearchStatus {
+  DRAFT
+  THEORETICAL
+  VERIFIED
+}
+
+model User {
+  id                 String                 @id @default(cuid())
+  username           String                 @unique
+  passwordHash       String
+  role               Role                   @default(MEMBER)
+  createdAt          DateTime               @default(now())
+  
+  profile            MemberProfile?
+  seat               TarotSeat?
+  personas           UserPersona[]
+  prayers            Prayer[]
+  commissionsMade    Commission[]           @relation("commissionCreator")
+  commissionsClaimed Commission[]           @relation("commissionClaimer")
+  projections        ProjectionSession[]
+  listings           BarterListing[]
+  offers             BarterOffer[]
+  tradesSold         Trade[]                @relation("tradeSeller")
+  tradesBought       Trade[]                @relation("tradeBuyer")
+  posts              IntelligencePost[]
+  comments           IntelligenceComment[]
+  reactions          IntelligenceReaction[]
+  sentWhispers       WhisperMessage[]       @relation("whisperFrom")
+  receivedWhispers   WhisperMessage[]       @relation("whisperTo")
+  tableMessages      TableMessage[]
+  notifications      Notification[]
+  audits             AuditLog[]
+  hostedGatherings   Gathering[]            @relation("gatheringHost")
+  gatheringsAttended GatheringParticipant[]
+  mysteriesCreated   WeeklyMystery[]        @relation("mysteryCreator")
+  mysterySubmissions MysterySubmission[]
+  votesCreated       TarotVote[]            @relation("voteCreator")
+  votesCast          TarotVoteRecord[]
+  researchEntries    PotionResearch[]
+  achievements       UserAchievement[]
+}
+
+model MemberProfile {
+  userId             String   @id
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codename           String
+  pathway            String
+  sequence           Int      // 9 (weakest) to 0 (strongest)
+  region             String
+  bio                String   @default("A Beyonder walking in shadows.")
+  specialization     String   @default("Divination & Mysticism")
+  avatarCard         String   @default("The Fool")
+  reputation         Int      @default(100)
+  contributions      Int      @default(0)
+  gatheringsAttended Int      @default(0)
+  isPublic           Boolean  @default(true)
+  showPathway        Boolean  @default(true)
+  showSequence       Boolean  @default(true)
+  showRegion         Boolean  @default(true)
+  statusMessage      String   @default("Contemplating above the gray fog")
+  
+  @@index([sequence])
+}
+
+model TarotSeat {
+  id         Int      @id // 0..21
+  title      String   @unique
+  occupantId String?  @unique
+  occupant   User?    @relation(fields: [occupantId], references: [id], onDelete: SetNull)
+  isSpeaking Boolean  @default(false)
+  handRaised Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+}
+
+model Persona {
+  id      Int           @id @default(autoincrement())
+  name    String        @unique
+  users   UserPersona[]
+  prayers Prayer[]
+}
+
+model UserPersona {
+  userId    String
+  personaId Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  persona   Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  @@id([userId, personaId])
+}
+
+model Gathering {
+  id           String                 @id @default(cuid())
+  title        String                 @db.VarChar(140)
+  description  String                 @db.VarChar(2000)
+  theme        String                 @default("Weekly Tarot Club Assembly")
+  hostId       String
+  host         User                   @relation("gatheringHost", fields: [hostId], references: [id])
+  status       GatheringStatus        @default(UPCOMING)
+  scheduledAt  DateTime
+  endedAt      DateTime?
+  agenda       String                 @db.Text
+  minutes      String?                @db.Text
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  
+  participants GatheringParticipant[]
+  messages     TableMessage[]
+
+  @@index([scheduledAt, status])
+}
+
+model GatheringParticipant {
+  id          String     @id @default(cuid())
+  gatheringId String
+  gathering   Gathering  @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rsvpStatus  RsvpStatus @default(ATTENDING)
+  attended    Boolean    @default(false)
+  notes       String?
+  createdAt   DateTime   @default(now())
+
+  @@unique([gatheringId, userId])
+}
+
+model TableMessage {
+  id             String     @id @default(cuid())
+  authorId       String
+  author         User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  gatheringId    String?
+  gathering      Gathering? @relation(fields: [gatheringId], references: [id], onDelete: SetNull)
+  body           String     @db.VarChar(2000)
+  isAnnouncement Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+
+  @@index([createdAt])
+  @@index([gatheringId, createdAt])
+}
+
+model WhisperMessage {
+  id        String    @id @default(cuid())
+  fromId    String
+  from      User      @relation("whisperFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId      String
+  to        User      @relation("whisperTo", fields: [toId], references: [id], onDelete: Cascade)
+  body      String    @db.VarChar(1000)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([fromId, toId, createdAt])
+  @@index([toId, createdAt])
+}
+
+model Prayer {
+  id         String       @id @default(cuid())
+  authorId   String
+  author     User         @relation(fields: [authorId], references: [id])
+  personaId  Int
+  persona    Persona      @relation(fields: [personaId], references: [id])
+  type       PrayerType
+  message    String       @db.VarChar(1000)
+  status     PrayerStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+  commission Commission?
+
+  @@index([status, createdAt])
+}
+
+model Commission {
+  id               String           @id @default(cuid())
+  prayerId         String?          @unique
+  prayer           Prayer?          @relation(fields: [prayerId], references: [id])
+  creatorId        String
+  creator          User             @relation("commissionCreator", fields: [creatorId], references: [id])
+  claimerId        String?
+  claimer          User?            @relation("commissionClaimer", fields: [claimerId], references: [id])
+  title            String           @db.VarChar(200)
+  description      String           @db.VarChar(2000)
+  objectives       String           @db.Text
+  reward           Int              @default(50)
+  danger           Int              @default(5)
+  hazardRank       Int              @default(7)
+  status           CommissionStatus @default(OPEN)
+  progress         Int              @default(0)
+  deadline         DateTime?
+  completionReport String?          @db.Text
+  collaborators    String?          @db.Text
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([status, createdAt])
+  @@index([claimerId, status])
+}
+
+model Artifact {
+  id                   Int                 @id @default(autoincrement())
+  name                 String
+  grade                Int                 // 0..3
+  description          String
+  abilities            String              @db.Text
+  negativeEffects      String              @db.Text
+  containmentProcedure String              @db.Text
+  drainRate            Float
+  drainUnit            String              @default("spirituality/hour")
+  available            Boolean             @default(true)
+  discoveryRecord      String?             @db.Text
+  discoveredBy         String?
+  projections          ProjectionSession[]
+
+  @@index([grade])
+}
+
+model ProjectionSession {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id])
+  artifactId Int
+  artifact   Artifact         @relation(fields: [artifactId], references: [id])
+  status     ProjectionStatus @default(ACTIVE)
+  createdAt  DateTime         @default(now())
+  expiresAt  DateTime
+
+  @@index([status, expiresAt])
+}
+
+model BarterListing {
+  id        String        @id @default(cuid())
+  ownerId   String
+  owner     User          @relation(fields: [ownerId], references: [id])
+  kind      GoodKind
+  title     String        @db.VarChar(120)
+  details   String        @db.VarChar(500)
+  wants     String        @db.VarChar(200)
+  status    ListingStatus @default(OPEN)
+  createdAt DateTime      @default(now())
+  offers    BarterOffer[]
+  trade     Trade?
+
+  @@index([status, kind])
+}
+
+model BarterOffer {
+  id        String        @id @default(cuid())
+  listingId String
+  listing   BarterListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  offererId String
+  offerer   User          @relation(fields: [offererId], references: [id])
+  offering  String        @db.VarChar(300)
+  status    OfferStatus   @default(PENDING)
+  createdAt DateTime      @default(now())
+  trade     Trade?
+
+  @@index([listingId, status])
+}
+
+model Trade {
+  id        String        @id @default(cuid())
+  listingId String        @unique
+  listing   BarterListing @relation(fields: [listingId], references: [id])
+  offerId   String        @unique
+  offer     BarterOffer   @relation(fields: [offerId], references: [id])
+  sellerId  String
+  seller    User          @relation("tradeSeller", fields: [sellerId], references: [id])
+  buyerId   String
+  buyer     User          @relation("tradeBuyer", fields: [buyerId], references: [id])
+  createdAt DateTime      @default(now())
+}
+
+model IntelligencePost {
+  id                 String                 @id @default(cuid())
+  authorId           String
+  author             User                   @relation(fields: [authorId], references: [id])
+  title              String                 @db.VarChar(160)
+  body               String                 @db.Text
+  category           String                 @default("GENERAL")
+  verificationStatus IntelVerification      @default(UNVERIFIED)
+  sequenceRequired   Int                    @default(9)
+  tags               String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  comments           IntelligenceComment[]
+  reactions          IntelligenceReaction[]
+
+  @@index([createdAt])
+  @@index([category])
+}
+
+model IntelligenceComment {
+  id        String           @id @default(cuid())
+  postId    String
+  post      IntelligencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String           @db.VarChar(1000)
+  createdAt DateTime         @default(now())
+
+  @@index([postId, createdAt])
+}
+
+model IntelligenceReaction {
+  id        String           @id @default(cuid())
+  postId    String
+  post      IntelligencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  createdAt DateTime         @default(now())
+
+  @@unique([postId, userId, type])
+}
+
+model PotionResearch {
+  id              String         @id @default(cuid())
+  authorId        String
+  author          User           @relation(fields: [authorId], references: [id])
+  pathway         String
+  sequence        Int
+  potionName      String
+  mainIngredients String         @db.Text
+  supplementary   String         @db.Text
+  actingMethod    String         @db.Text
+  advancingRitual String?        @db.Text
+  status          ResearchStatus @default(THEORETICAL)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([pathway, sequence])
+}
+
+model WeeklyMystery {
+  id               String              @id @default(cuid())
+  title            String              @db.VarChar(160)
+  clueText         String              @db.Text
+  difficulty       MysteryDifficulty   @default(ADEPT)
+  rewardReputation Int                 @default(30)
+  rewardPounds     Int                 @default(100)
+  solutionKeyword  String
+  explanation      String              @db.Text
+  status           MysteryStatus       @default(ACTIVE)
+  createdById      String
+  createdBy        User                @relation("mysteryCreator", fields: [createdById], references: [id])
+  expiresAt        DateTime
+  createdAt        DateTime            @default(now())
+  submissions      MysterySubmission[]
+
+  @@index([status, expiresAt])
+}
+
+model MysterySubmission {
+  id        String        @id @default(cuid())
+  mysteryId String
+  mystery   WeeklyMystery @relation(fields: [mysteryId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deduction String        @db.Text
+  isCorrect Boolean       @default(false)
+  feedback  String?       @db.Text
+  createdAt DateTime      @default(now())
+
+  @@index([mysteryId, userId])
+}
+
+model TarotVote {
+  id          String            @id @default(cuid())
+  title       String            @db.VarChar(160)
+  description String            @db.Text
+  options     String            @db.Text
+  createdById String
+  createdBy   User              @relation("voteCreator", fields: [createdById], references: [id])
+  status      VoteStatus        @default(ACTIVE)
+  closesAt    DateTime
+  createdAt   DateTime          @default(now())
+  votes       TarotVoteRecord[]
+
+  @@index([status])
+}
+
+model TarotVoteRecord {
+  id          String    @id @default(cuid())
+  voteId      String
+  vote        TarotVote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  optionIndex Int
+  createdAt   DateTime  @default(now())
+
+  @@unique([voteId, userId])
+}
+
+model Achievement {
+  id          String            @id @default(cuid())
+  code        String            @unique
+  title       String
+  description String
+  icon        String
+  category    String
+  points      Int               @default(10)
+  users       UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  unlockedAt    DateTime    @default(now())
+
+  @@unique([userId, achievementId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String    @default("Notice from the Fog")
+  text      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  action    String
+  target    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+}
